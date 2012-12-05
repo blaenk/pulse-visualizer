@@ -1,0 +1,14 @@
+Name: pulse-visualizer
+Version: 0.1
+Description: Visualizer for PulseAudio
+Author: Jorge Israel Peña
+Maintainer: jorgepblank@gmail.com
+Build-Type: Simple
+Cabal-Version: >= 1.2
+
+Executable pulse-visualizer
+  Main-Is: Visualizer.hs
+  Build-Depends: base, array, carray, fft, SDL, SDL-gfx, pulse-simple
+  ghc-options: -threaded
+  Extensions: DoAndIfThenElse
+

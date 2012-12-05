@@ -13,6 +13,8 @@
    pulse-simple
 -} 
 
+-- apparently the else needs indenting. see http://hackage.haskell.org/trac/haskell-prime/wiki/DoAndIfThenElse
+
 -- sound
 import qualified Sound.Pulse.Simple as Pulse
 import qualified Math.FFT as FFTW
@@ -65,12 +67,12 @@ main = SDL.withInit [SDL.InitEverything] $ do
 
   where loop screen source = do
           quit <- whileEvents
-          if quit then
+          if quit then do
             -- close the connection
             Pulse.simpleFree source
           else do
             -- clear the screen
-            SDL.fillRect screen (Just (SDL.Rect 0 0 640 480)) (color 0x00 0x00 0x00 0x00)
+            SDL.fillRect screen (Just (SDL.Rect 0 0 640 480)) (SDL.Pixel 0x00000000) -- (color 0x00 0x00 0x00 0x00)
             -- read audio data
             readSamples source [(renderBars screen)]
             -- print Pulse latency
