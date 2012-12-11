@@ -32,6 +32,7 @@ import Control.Monad (forM_)
 
 type Sample = Int16
 type Buffer = [Int16]
+type RealData = CA.CArray Int Double
 type Spectrum = CA.CArray Int (Complex Double)
 type Polars = CA.CArray Int Double
 
@@ -52,11 +53,15 @@ readSamples source actions =
      -- pass the spectrum
      forM_ actions $ \action -> action frequencies
 
--- general purpose sound generating function
-sound :: Double -> Int -> Double -> Sample -> Buffer
-sound freq samples len volume = take (round $ len * (fromIntegral samples)) $  -- take out desired number of samples
-                         map (round . (* fromIntegral volume)) $ -- scale by the volume
-                         map sin [0.0, (freq * 2 * pi / (fromIntegral samples))..] -- generate sample
+bufferToRealData :: Buffer -> RealData
+bufferToRealData buffer =
+  (CA.listArray (0, len - 1) (map fromIntegral buffer :: [Double])) :: RealData
+  where len = length buffer
+
+polarMagnitudes :: Spectrum -> Polars
+polarMagnitudes spectrum =
+  CA.amap polarConversion spectrum
+  where polarConversion (r :+ i) = sqrt (r^2 + i^2)
 
 -- if speed is an issue:
      -- try 'real fft' (p. 239 of book)
@@ -66,13 +71,17 @@ sound freq samples len volume = take (round $ len * (fromIntegral samples)) $  -
 frequencySpectrum :: Buffer -> Spectrum
 frequencySpectrum buffer =
   -- calculate the fourier transform
-  let len = length buffer
-      complex = (CA.listArray (0, len - 1) $ map (\sample -> (fromIntegral sample) :+ 0) buffer) :: Spectrum
-  in FFTW.dft complex
+  FFTW.dftRC $ bufferToRealData buffer
 
-polarMagnitudes :: Spectrum -> Polars
-polarMagnitudes spectrum =
-  CA.sliceWith region region polarConversion spectrum
-  where polarConversion (r :+ i) = sqrt (r^2 + i^2)
-        region = (0, (bufferSize - 1)) -- we only need up to N / 2 - 1
+normalizeSpectrum :: Spectrum -> Spectrum
+normalizeSpectrum spectrum =
+  CA.amap normalize spectrum
+  where normalize complex = ((realPart complex) / len) :+ ((imagPart complex) / len)
+        len = fromIntegral $ (CA.size spectrum)
+
+-- general purpose sound generating function
+sound :: Double -> Int -> Double -> Sample -> Buffer
+sound freq samples len volume = take (round $ len * (fromIntegral samples)) $  -- take out desired number of samples
+                         map (round . (* fromIntegral volume)) $ -- scale by the volume
+                         map sin [0.0, (freq * 2 * pi / (fromIntegral samples))..] -- generate sample
 

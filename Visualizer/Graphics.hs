@@ -19,19 +19,22 @@ import Data.Int (Int16) -- S16 in SampleSpec
 renderBars :: SDL.Surface -> Polars -> IO ()
 renderBars surface spectrum =
   -- renderBar takes coords in SDL conventional coordinates
-  do mapM_ (uncurry $ renderBar surface) $ zip (CA.elems spectrum) (barSpan [10, 40, 70, 100, 130, 160, 190, 220])
+  do mapM_ (uncurry $ renderBar surface) $ zip spectrumElems (barSpan [10, 40, 70, 100, 130, 160, 190, 220])
   where barSpan points = map (\point -> (point, (480 - 10))) points
+        spectrumElems = CA.elems spectrum
+        maxSpectrum = maximum spectrumElems
 
--- render volume bar in SDL
-renderBar :: SDL.Surface -> Double -> (Int, Int) -> IO ()
-renderBar surface level (sdl_x, sdl_y) =
-  -- the SDL.Rect box accepts is x1 y1 x2 y2 where 1's are top right, 2's are bottom left
-  do void $ SDL.P.box surface (SDL.Rect x y w h) (SDL.Pixel 0xFFFFFFFF) -- (color 255 255 255 255)
-  where x = sdl_x + 20
-        y = sdl_y
-        w = sdl_x
-        h = y - (round normalized)
-        normalized = level / (fromIntegral (maxBound :: Int16))
+        -- render volume bar in SDL
+        renderBar :: SDL.Surface -> Double -> (Int, Int) -> IO ()
+        renderBar surface level (sdl_x, sdl_y) =
+          -- the SDL.Rect box accepts is x1 y1 x2 y2 where 1's are top right, 2's are bottom left
+          do void $ SDL.P.box surface (SDL.Rect x y w h) (SDL.Pixel 0xFFFFFFFF) -- (color 255 255 255 255)
+          where x = sdl_x + 20
+                y = sdl_y
+                w = sdl_x
+                h = y - (round scaled)
+                normalized = level / maxSpectrum -- (fromIntegral (maxBound :: Int16))
+                scaled = normalized * 100
 
 {- 
 -- print volume bar to terminal
