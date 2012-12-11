@@ -48,15 +48,19 @@ disconnectPulse = Pulse.simpleFree
 readSamples :: Pulse.Simple -> [(Polars -> IO ())] -> IO ()
 readSamples source actions =
   do buffer <- Pulse.simpleRead source bufferSize :: IO Buffer
-     let frequencies = polarMagnitudes $ frequencySpectrum buffer
+     let frequencies = polarMagnitudes $ normalizeSpectrum $ frequencySpectrum buffer
 
      -- pass the spectrum
      forM_ actions $ \action -> action frequencies
 
 bufferToRealData :: Buffer -> RealData
 bufferToRealData buffer =
-  (CA.listArray (0, len - 1) (map fromIntegral buffer :: [Double])) :: RealData
-  where len = length buffer
+  doublesToRealData (map fromIntegral buffer :: [Double])
+
+doublesToRealData :: [Double] -> RealData
+doublesToRealData doubles =
+  (CA.listArray (0, len - 1) doubles) :: RealData
+  where len = length doubles
 
 polarMagnitudes :: Spectrum -> Polars
 polarMagnitudes spectrum =
@@ -71,13 +75,25 @@ polarMagnitudes spectrum =
 frequencySpectrum :: Buffer -> Spectrum
 frequencySpectrum buffer =
   -- calculate the fourier transform
-  FFTW.dftRC $ bufferToRealData buffer
+  FFTW.dftRC $ doublesToRealData $ hammingWindow buffer
 
 normalizeSpectrum :: Spectrum -> Spectrum
 normalizeSpectrum spectrum =
   CA.amap normalize spectrum
-  where normalize complex = ((realPart complex) / len) :+ ((imagPart complex) / len)
-        len = fromIntegral $ (CA.size spectrum)
+  where normalize complex = ((realPart complex) / norm) :+ ((imagPart complex) / norm)
+        -- size is actually 9 in case of 16 point fft
+        norm = ((fromIntegral $ (CA.size spectrum)) - 1) / 2
+
+hammingWindow :: Buffer -> [Double]
+hammingWindow buffer =
+  window buffer 0
+  where
+    window :: Buffer -> Int -> [Double]
+    window [] n = []
+    window (x:xs) n = ((fromIntegral x) * (hamming n)) : window xs (n + 1)
+    hamming :: Int -> Double
+    hamming n = (0.54 - 0.46 * (cos ((2 * pi * (fromIntegral n)) / ((fromIntegral len) - 1))))
+    len = length buffer
 
 -- general purpose sound generating function
 sound :: Double -> Int -> Double -> Sample -> Buffer

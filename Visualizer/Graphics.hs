@@ -19,11 +19,16 @@ import Data.Int (Int16) -- S16 in SampleSpec
 renderBars :: SDL.Surface -> Polars -> IO ()
 renderBars surface spectrum =
   -- renderBar takes coords in SDL conventional coordinates
-  do mapM_ (uncurry $ renderBar surface) $ zip spectrumElems (barSpan [10, 40, 70, 100, 130, 160, 190, 220])
+  do mapM_ (uncurry $ renderBar surface) $ zip chosenElems (barSpan [10, 40, 70, 100, 130, 160, 190, 220])
   where barSpan points = map (\point -> (point, (480 - 10))) points
-        spectrumElems = CA.elems spectrum
+        spectrumElems = (drop 1 $ CA.elems spectrum)
+        len = (CA.size spectrum) - 1
+        chosenElems = (every (len `div` 8) spectrumElems)
         maxSpectrum = maximum spectrumElems
-
+        -- take every nth element from a list: http://stackoverflow.com/a/2028218
+        every n xs = case drop (n - 1) xs of
+                       (y:ys) -> y : every n ys
+                       [] -> []
         -- render volume bar in SDL
         renderBar :: SDL.Surface -> Double -> (Int, Int) -> IO ()
         renderBar surface level (sdl_x, sdl_y) =
@@ -34,7 +39,7 @@ renderBars surface spectrum =
                 w = sdl_x
                 h = y - (round scaled)
                 normalized = level / maxSpectrum -- (fromIntegral (maxBound :: Int16))
-                scaled = normalized * 100
+                scaled = normalized * 300
 
 {- 
 -- print volume bar to terminal
