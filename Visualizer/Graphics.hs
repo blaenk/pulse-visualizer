@@ -10,8 +10,8 @@ module Visualizer.Graphics (
 import qualified Graphics.UI.GLFW as GLFW
 
 import Graphics.Rendering.OpenGL as GL
-import Graphics.Rendering.OpenGL.GLU as GLU (perspective)
-import Graphics.GLUtil as GLUtil
+import qualified Graphics.Rendering.OpenGL.GLU as GLU (perspective)
+import qualified Graphics.GLUtil as GLUtil
 
 -- audio types
 import Visualizer.Audio (Buffer, Polars, Sample, Spectrum, disconnectPulse)
@@ -29,8 +29,6 @@ import Foreign.Storable (sizeOf)
 import System.FilePath ((</>))
 import Data.IORef (IORef, newIORef, readIORef, modifyIORef)
 
-data Rect = Rect Int Int Int Int
-
 -- GPU Resources
 data ShaderResource = ShaderResource {
   vertexShader   :: GL.VertexShader,
@@ -47,61 +45,53 @@ data GPUResource = GPUResource {
   shaderResource :: ShaderResource
 }
 
-quadBufferData :: [GL.GLfloat]
-{-
-  -- bar
-quadBufferData = [   0, 0, 0,
-                  0.01, 0, 0,
-                     0, 1, 0,
-                  0.01, 1, 0]
--}
+cubeBufferData :: [GL.GLfloat]
+cubeBufferData = [-0.1, 0,  0.1, 1,
+                   0.1, 0,  0.1, 1,
+                  -0.1,  0.2,  0.1, 1,
+                   0.1,  0.2,  0.1, 1,
+                  -0.1, 0, -0.1, 1,
+                   0.1, 0, -0.1, 1,
+                  -0.1,  0.2, -0.1, 1,
+                   0.1,  0.2, -0.1, 1]
 
-quadBufferData = [-0.01, -0.01, 0.01,
-                  0.01, -0.01, 0.01,
-                  -0.01, 0.01, 0.01,
-                  0.01, 0.01, 0.01,
-                  -0.01, -0.01, -0.01,
-                  0.01, -0.01, -0.01,
-                  0.01, 0.01, -0.01]
-
-quadBufferElements :: [GL.GLuint]
---quadBufferElements = [0..3] for bar
-quadBufferElements = [0, 1, 2, 3, 7, 1, 5, 4, 7, 6, 2, 4, 0, 1]
+cubeBufferElements :: [GL.GLuint]
+cubeBufferElements = [0, 1, 2, 3, 7, 1, 5, 4, 7, 6, 2, 4, 0, 1]
 
 loadShaderResource = do
-  vertexShader   <- GLUtil.loadShader $ "shaders" </> "quad.vert"
-  fragmentShader <- GLUtil.loadShader $ "shaders" </> "quad.frag"
+  vertexShader   <- GLUtil.loadShader $ "shaders" </> "cube.vert"
+  fragmentShader <- GLUtil.loadShader $ "shaders" </> "cube.frag"
   program        <- GLUtil.linkShaderProgram [vertexShader] [fragmentShader]
 
   ShaderResource vertexShader fragmentShader program
-    <$> get (GL.uniformLocation program "bar_number")
-    <*> get (GL.uniformLocation program "spectrum")
-    <*> get (GL.attribLocation program "position")
+    <$> GL.get (GL.uniformLocation program "bar_number")
+    <*> GL.get (GL.uniformLocation program "spectrum")
+    <*> GL.get (GL.attribLocation program "position")
 
 makeGPUResource =
   GPUResource
-    <$> GLUtil.makeBuffer GL.ArrayBuffer quadBufferData
-    <*> GLUtil.makeBuffer GL.ElementArrayBuffer quadBufferElements
+    <$> GLUtil.makeBuffer GL.ArrayBuffer cubeBufferData
+    <*> GLUtil.makeBuffer GL.ElementArrayBuffer cubeBufferElements
     <*> loadShaderResource
 
 setupGeometry :: GPUResource -> IO ()
 setupGeometry gpuResource =
   let posn = positionA (shaderResource gpuResource)
-      stride = fromIntegral $ sizeOf (undefined :: GL.GLfloat) * 3
-      vad = GL.VertexArrayDescriptor 4 Float stride GLUtil.offset0
+      stride = fromIntegral $ sizeOf (undefined :: GL.GLfloat) * 4
+      vad = GL.VertexArrayDescriptor 4 GL.Float stride GLUtil.offset0
   in do GL.bindBuffer GL.ArrayBuffer $= Just (vertexBuffer gpuResource)
-        GL.vertexAttribPointer posn  $= (ToFloat, vad)
-        GL.vertexAttribArray posn    $= Enabled
+        GL.vertexAttribPointer posn  $= (GL.ToFloat, vad)
+        GL.vertexAttribArray posn    $= GL.Enabled
 
-drawQuad :: GPUResource -> GL.GLfloat -> GL.GLfloat -> IO ()
-drawQuad gpuResource barNumber spectrum =
+drawCube :: GPUResource -> GL.GLfloat -> GL.GLfloat -> IO ()
+drawCube gpuResource barNumber spectrum =
   do GL.currentProgram $= Just (program (shaderResource gpuResource))
-     GL.uniform (barNumberU (shaderResource gpuResource))   $= Index1 (barNumber :: GL.GLfloat)
-     GL.uniform (spectrumU (shaderResource gpuResource)) $= Index1 (spectrum :: GL.GLfloat)
+     GL.uniform (barNumberU (shaderResource gpuResource))   $= GL.Index1 (barNumber :: GL.GLfloat)
+     GL.uniform (spectrumU (shaderResource gpuResource)) $= GL.Index1 (spectrum :: GL.GLfloat)
 
      setupGeometry gpuResource
      GL.bindBuffer GL.ElementArrayBuffer $= Just (elementBuffer gpuResource)
-     GL.drawElements GL.TriangleStrip 4 UnsignedInt GLUtil.offset0
+     GL.drawElements GL.TriangleStrip 14 GL.UnsignedInt GLUtil.offset0
 
 -- GLFW
 initGLFW :: Pulse.Simple -> IO (IORef GPUResource)
@@ -128,7 +118,7 @@ initGLFW source = do
   GLFW.setWindowCloseCallback (shutdown source)
 
   -- GL.shadeModel $= GL.Smooth
-  GL.clearColor $= (GL.Color4 1.0 1.0 1.0 (1.0 :: GL.GLfloat))
+  GL.clearColor $= (GL.Color4 0.0 0.0 0.0 (1.0 :: GL.GLfloat))
   GL.clearDepth $= 1
   -- GL.depthFunc $= Just GL.Lequal
   -- GL.hint PerspectiveCorrection $= Nicest
@@ -163,7 +153,7 @@ renderBars gpuResource spectrum =
         -- render volume bar in SDL
         renderBar :: Double -> Double -> IO ()
         renderBar barNumber level = do
-          drawQuad gpuResource (realToFrac barNumber) (realToFrac normalized)
+          drawCube gpuResource (realToFrac barNumber) (realToFrac normalized)
           where x = 0 -- sdl_x + 20
                 y = 0 -- sdl_y
                 w = 0 -- sdl_x
@@ -174,7 +164,7 @@ renderBars gpuResource spectrum =
 renderVisualization :: IORef GPUResource -> Polars -> IO ()
 renderVisualization gpuResource' polars = do
   gpuResource <- readIORef gpuResource'
-  GL.clear [ColorBuffer, DepthBuffer]
+  GL.clear [GL.ColorBuffer, GL.DepthBuffer]
   -- GL.loadIdentity
 
   -- setup camera position
@@ -183,20 +173,18 @@ renderVisualization gpuResource' polars = do
   -- render the bars
   renderBars gpuResource polars
 
-  -- drawQuad gpuResource
-
   -- swap buffers
   GLFW.swapBuffers
 
 resizeScene :: GLFW.WindowSizeCallback
 resizeScene w 0 = resizeScene w 1
 resizeScene width height = do
-  GL.viewport $= (GL.Position 0 0, (GL.Size (fromIntegral width) (fromIntegral height)))
-  GL.matrixMode $= Projection
-  GL.loadIdentity
+  -- GL.viewport $= (GL.Position 0 0, (GL.Size (fromIntegral width) (fromIntegral height)))
+  -- GL.matrixMode $= Projection
+  -- GL.loadIdentity
   -- GLU.perspective 45 (fromIntegral width / fromIntegral height) 0.1 100
-  GL.matrixMode $= Modelview 0
-  GL.loadIdentity
+  -- GL.matrixMode $= Modelview 0
+  -- GL.loadIdentity
   GL.flush
 
 shutdown :: Pulse.Simple -> GLFW.WindowCloseCallback
@@ -210,13 +198,6 @@ shutdown source = do
 keyPressed :: Pulse.Simple -> GLFW.KeyCallback
 keyPressed source GLFW.KeyEsc True = (shutdown source) >> return ()
 keyPressed source _ _ = return ()
-
-{- 
--- print volume bar to terminal
-printAverageAmplitude :: Buffer -> IO ()
-printAverageAmplitude buffer =
-  do putStrLn (replicate (normalize buffer) '*')
--}
 
 printPolars :: Polars -> IO ()
 printPolars polars =

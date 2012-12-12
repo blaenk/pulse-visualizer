@@ -7,6 +7,8 @@ main :: IO ()
 main = do
   source <- connectPulse
 
+  -- initialize GLFW and extract the GPUResource which
+  -- contains the shader information and geometry
   gpuResource <- initGLFW source
 
   forever $ do
