@@ -11,6 +11,7 @@ import qualified Graphics.UI.GLFW as GLFW
 
 import Graphics.Rendering.OpenGL as GL
 import Graphics.Rendering.OpenGL.GLU as GLU (perspective)
+import Graphics.GLUtil as GLUtil
 
 -- audio types
 import Visualizer.Audio (Buffer, Polars, Sample, Spectrum, disconnectPulse)
@@ -25,11 +26,73 @@ import Control.Applicative
 import Data.Int (Int16) -- S16 in SampleSpec
 import System.Exit (exitWith, ExitCode(ExitSuccess))
 import Foreign.Storable (sizeOf)
+import System.FilePath ((</>))
+import Data.IORef (IORef, newIORef, readIORef, modifyIORef)
 
 data Rect = Rect Int Int Int Int
 
+-- GPU Resources
+data ShaderResource = ShaderResource {
+  vertexShader   :: GL.VertexShader,
+  fragmentShader :: GL.FragmentShader,
+  program        :: GL.Program,
+  volumeU        :: GL.UniformLocation,
+  spectrumU      :: GL.UniformLocation,
+  positionA      :: GL.AttribLocation
+}
+
+data GPUResource = GPUResource {
+  vertexBuffer   :: GL.BufferObject,
+  elementBuffer  :: GL.BufferObject,
+  shaderResource :: ShaderResource
+}
+
+quadBufferData :: [GL.GLfloat]
+quadBufferData = [-1, -1, 0,
+                   1, -1, 0,
+                  -1,  1, 0,
+                   1,  1, 0]
+
+quadBufferElements :: [GL.GLuint]
+quadBufferElements = [0..3]
+
+loadShaderResource = do
+  vertexShader   <- GLUtil.loadShader $ "shaders" </> "quad.vert"
+  fragmentShader <- GLUtil.loadShader $ "shaders" </> "quad.frag"
+  program        <- GLUtil.linkShaderProgram [vertexShader] [fragmentShader]
+
+  ShaderResource vertexShader fragmentShader program
+    <$> get (GL.uniformLocation program "volume")
+    <*> get (GL.uniformLocation program "spectrum")
+    <*> get (GL.attribLocation program "position")
+
+makeGPUResource =
+  GPUResource
+    <$> GLUtil.makeBuffer GL.ArrayBuffer quadBufferData
+    <*> GLUtil.makeBuffer GL.ElementArrayBuffer quadBufferElements
+    <*> loadShaderResource
+
+setupGeometry :: GPUResource -> IO ()
+setupGeometry gpuResource =
+  let posn = positionA (shaderResource gpuResource)
+      stride = fromIntegral $ sizeOf (undefined :: GL.GLfloat) * 3
+      vad = GL.VertexArrayDescriptor 4 Float stride GLUtil.offset0
+  in do GL.bindBuffer GL.ArrayBuffer $= Just (vertexBuffer gpuResource)
+        GL.vertexAttribPointer posn  $= (ToFloat, vad)
+        GL.vertexAttribArray posn    $= Enabled
+
+drawQuad :: GPUResource -> IO ()
+drawQuad gpuResource =
+  do GL.currentProgram $= Just (program (shaderResource gpuResource))
+     GL.uniform (volumeU (shaderResource gpuResource))   $= Index1 (1 :: GL.GLfloat) -- set this to the current volume
+     GL.uniform (spectrumU (shaderResource gpuResource)) $= Index1 (1 :: GL.GLfloat) -- set this to the current spectrum
+
+     setupGeometry gpuResource
+     GL.bindBuffer GL.ElementArrayBuffer $= Just (elementBuffer gpuResource)
+     GL.drawElements GL.TriangleStrip 4 UnsignedInt GLUtil.offset0
+
 -- GLFW
-initGLFW :: Pulse.Simple -> IO ()
+initGLFW :: Pulse.Simple -> IO (IORef GPUResource)
 initGLFW source = do
   True <- GLFW.initialize
 
@@ -48,16 +111,20 @@ initGLFW source = do
   GLFW.setWindowPosition 0 0
   GLFW.setWindowTitle "PulseAudio Visualizer in Haskell"
   -- GLFW.setWindowRefreshCallback renderVisualization
-  GLFW.setWindowSizeCallback resizeScene
+  -- GLFW.setWindowSizeCallback resizeScene
   GLFW.setKeyCallback (keyPressed source)
   GLFW.setWindowCloseCallback (shutdown source)
 
-  GL.shadeModel $= GL.Smooth
-  GL.clearColor $= (GL.Color4 0.0 0.0 0.0 (1.0 :: GL.GLfloat))
+  -- GL.shadeModel $= GL.Smooth
+  GL.clearColor $= (GL.Color4 1.0 1.0 1.0 (1.0 :: GL.GLfloat))
   GL.clearDepth $= 1
-  GL.depthFunc $= Just GL.Lequal
-  GL.hint PerspectiveCorrection $= Nicest
+  -- GL.depthFunc $= Just GL.Lequal
+  -- GL.hint PerspectiveCorrection $= Nicest
 
+  makeGPUResource >>= newIORef
+
+-- clean this up and just pass the CA.elems spectrum since we do it anyways
+-- removes dependency on CA and IA
 renderBars :: Polars -> IO ()
 renderBars spectrum =
   -- renderBar takes coords in SDL conventional coordinates
@@ -94,16 +161,19 @@ renderBars spectrum =
                 normalized = level / maxSpectrum -- (fromIntegral (maxBound :: Int16))
                 scaled = normalized * 300
 
-renderVisualization :: Polars -> IO ()
-renderVisualization polars = do
+renderVisualization :: IORef GPUResource -> Polars -> IO ()
+renderVisualization gpuResource' polars = do
+  gpuResource <- readIORef gpuResource'
   GL.clear [ColorBuffer, DepthBuffer]
-  GL.loadIdentity
+  -- GL.loadIdentity
 
   -- setup camera position
-  GL.translate $ GL.Vector3 (-1.5) 0 (-6.0 :: GL.GLfloat) --Move left 1.5 Units and into the screen 6.0
+  -- GL.translate $ GL.Vector3 (-1.5) 0 (-6.0 :: GL.GLfloat) --Move left 1.5 Units and into the screen 6.0
 
   -- render the bars
-  renderBars polars
+  -- renderBars polars
+
+  drawQuad gpuResource
 
   -- swap buffers
   GLFW.swapBuffers
