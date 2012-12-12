@@ -8,7 +8,7 @@ Cabal-Version: >= 1.2
 
 Executable pulse-visualizer
   Main-Is: Visualizer.hs
-  Build-Depends: base, array, carray, fft, SDL, SDL-gfx, pulse-simple, OpenGLRaw, GLURaw, GLFW-b, OpenGL
+  Build-Depends: base, array, carray, fft, SDL, SDL-gfx, pulse-simple, GLFW-b, OpenGL, GLUtil
   ghc-options: -threaded -rtsopts -fforce-recomp -O2 -funbox-strict-fields -optc-O2
   Extensions: DoAndIfThenElse
 

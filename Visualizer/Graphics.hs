@@ -5,9 +5,12 @@ module Visualizer.Graphics (
 ) where
 
 -- graphics
+
+-- todo: migrate to GLFW neat
 import qualified Graphics.UI.GLFW as GLFW
-import Graphics.Rendering.OpenGL.Raw
-import Graphics.Rendering.GLU.Raw (gluPerspective)
+
+import Graphics.Rendering.OpenGL as GL
+import Graphics.Rendering.OpenGL.GLU as GLU (perspective)
 
 -- audio types
 import Visualizer.Audio (Buffer, Polars, Sample, Spectrum, disconnectPulse)
@@ -18,8 +21,10 @@ import qualified Data.Array.CArray as CA
 import qualified Data.Array.IArray as IA
 import Data.Bits (shiftL, (.|.))
 import Control.Monad (void, forever, forM_, unless)
+import Control.Applicative
 import Data.Int (Int16) -- S16 in SampleSpec
-import System.Exit (exitWith, ExitCode(..))
+import System.Exit (exitWith, ExitCode(ExitSuccess))
+import Foreign.Storable (sizeOf)
 
 data Rect = Rect Int Int Int Int
 
@@ -47,12 +52,11 @@ initGLFW source = do
   GLFW.setKeyCallback (keyPressed source)
   GLFW.setWindowCloseCallback (shutdown source)
 
-  glShadeModel gl_SMOOTH
-  glClearColor 0 0 0 0
-  glClearDepth 1
-  glEnable gl_DEPTH_TEST
-  glDepthFunc gl_LEQUAL
-  glHint gl_PERSPECTIVE_CORRECTION_HINT gl_NICEST
+  GL.shadeModel $= GL.Smooth
+  GL.clearColor $= (GL.Color4 0.0 0.0 0.0 (1.0 :: GL.GLfloat))
+  GL.clearDepth $= 1
+  GL.depthFunc $= Just GL.Lequal
+  GL.hint PerspectiveCorrection $= Nicest
 
 renderBars :: Polars -> IO ()
 renderBars spectrum =
@@ -73,16 +77,15 @@ renderBars spectrum =
           -- the SDL.Rect box accepts is x1 y1 x2 y2 where 1's are top right, 2's are bottom left
           -- do void $ SDL.P.box surface (SDL.Rect x y w h) (SDL.Pixel 0xFFFFFFFF) -- (color 255 255 255 255)
 
-          glColor3f 1 1 1
+          GL.color $ GL.Color3 1 1 (1 :: GL.GLfloat)
 
-          glBegin gl_QUADS
-          glVertex3f (-1) 1    0 -- TL
-          glVertex3f 1    1    0 -- TR
-          glVertex3f 1    (-1) 0 -- BR
-          glVertex3f (-1) (-1) 0 -- BL
-          glEnd
+          GL.renderPrimitive GL.Quads $ do
+            GL.vertex $ GL.Vertex3 (-1)  1 (0 :: GL.GLfloat) -- TL
+            GL.vertex $ GL.Vertex3  1    1 (0 :: GL.GLfloat) -- TR
+            GL.vertex $ GL.Vertex3  1  (-1)(0 :: GL.GLfloat) -- BR
+            GL.vertex $ GL.Vertex3 (-1)(-1)(0 :: GL.GLfloat) -- BL
 
-          glFlush
+          GL.flush
 
           where x = sdl_x + 20
                 y = sdl_y
@@ -93,11 +96,11 @@ renderBars spectrum =
 
 renderVisualization :: Polars -> IO ()
 renderVisualization polars = do
-  glClear $ fromIntegral $ gl_COLOR_BUFFER_BIT .|. gl_DEPTH_BUFFER_BIT
-  glLoadIdentity
+  GL.clear [ColorBuffer, DepthBuffer]
+  GL.loadIdentity
 
   -- setup camera position
-  glTranslatef (-1.5) 0 (-6.0) --Move left 1.5 Units and into the screen 6.0
+  GL.translate $ GL.Vector3 (-1.5) 0 (-6.0 :: GL.GLfloat) --Move left 1.5 Units and into the screen 6.0
 
   -- render the bars
   renderBars polars
@@ -108,13 +111,13 @@ renderVisualization polars = do
 resizeScene :: GLFW.WindowSizeCallback
 resizeScene w 0 = resizeScene w 1
 resizeScene width height = do
-  glViewport 0 0 (fromIntegral width) (fromIntegral height)
-  glMatrixMode gl_PROJECTION
-  glLoadIdentity
-  gluPerspective 45 (fromIntegral width / fromIntegral height) 0.1 100
-  glMatrixMode gl_MODELVIEW
-  glLoadIdentity
-  glFlush
+  GL.viewport $= (GL.Position 0 0, (GL.Size (fromIntegral width) (fromIntegral height)))
+  GL.matrixMode $= Projection
+  GL.loadIdentity
+  GLU.perspective 45 (fromIntegral width / fromIntegral height) 0.1 100
+  GL.matrixMode $= Modelview 0
+  GL.loadIdentity
+  GL.flush
 
 shutdown :: Pulse.Simple -> GLFW.WindowCloseCallback
 shutdown source = do
