@@ -36,7 +36,7 @@ data ShaderResource = ShaderResource {
   vertexShader   :: GL.VertexShader,
   fragmentShader :: GL.FragmentShader,
   program        :: GL.Program,
-  volumeU        :: GL.UniformLocation,
+  barNumberU     :: GL.UniformLocation,
   spectrumU      :: GL.UniformLocation,
   positionA      :: GL.AttribLocation
 }
@@ -48,13 +48,25 @@ data GPUResource = GPUResource {
 }
 
 quadBufferData :: [GL.GLfloat]
-quadBufferData = [-1, -1, 0,
-                   1, -1, 0,
-                  -1,  1, 0,
-                   1,  1, 0]
+{-
+  -- bar
+quadBufferData = [   0, 0, 0,
+                  0.01, 0, 0,
+                     0, 1, 0,
+                  0.01, 1, 0]
+-}
+
+quadBufferData = [-0.01, -0.01, 0.01,
+                  0.01, -0.01, 0.01,
+                  -0.01, 0.01, 0.01,
+                  0.01, 0.01, 0.01,
+                  -0.01, -0.01, -0.01,
+                  0.01, -0.01, -0.01,
+                  0.01, 0.01, -0.01]
 
 quadBufferElements :: [GL.GLuint]
-quadBufferElements = [0..3]
+--quadBufferElements = [0..3] for bar
+quadBufferElements = [0, 1, 2, 3, 7, 1, 5, 4, 7, 6, 2, 4, 0, 1]
 
 loadShaderResource = do
   vertexShader   <- GLUtil.loadShader $ "shaders" </> "quad.vert"
@@ -62,7 +74,7 @@ loadShaderResource = do
   program        <- GLUtil.linkShaderProgram [vertexShader] [fragmentShader]
 
   ShaderResource vertexShader fragmentShader program
-    <$> get (GL.uniformLocation program "volume")
+    <$> get (GL.uniformLocation program "bar_number")
     <*> get (GL.uniformLocation program "spectrum")
     <*> get (GL.attribLocation program "position")
 
@@ -81,11 +93,11 @@ setupGeometry gpuResource =
         GL.vertexAttribPointer posn  $= (ToFloat, vad)
         GL.vertexAttribArray posn    $= Enabled
 
-drawQuad :: GPUResource -> IO ()
-drawQuad gpuResource =
+drawQuad :: GPUResource -> GL.GLfloat -> GL.GLfloat -> IO ()
+drawQuad gpuResource barNumber spectrum =
   do GL.currentProgram $= Just (program (shaderResource gpuResource))
-     GL.uniform (volumeU (shaderResource gpuResource))   $= Index1 (1 :: GL.GLfloat) -- set this to the current volume
-     GL.uniform (spectrumU (shaderResource gpuResource)) $= Index1 (1 :: GL.GLfloat) -- set this to the current spectrum
+     GL.uniform (barNumberU (shaderResource gpuResource))   $= Index1 (barNumber :: GL.GLfloat)
+     GL.uniform (spectrumU (shaderResource gpuResource)) $= Index1 (spectrum :: GL.GLfloat)
 
      setupGeometry gpuResource
      GL.bindBuffer GL.ElementArrayBuffer $= Just (elementBuffer gpuResource)
@@ -111,7 +123,7 @@ initGLFW source = do
   GLFW.setWindowPosition 0 0
   GLFW.setWindowTitle "PulseAudio Visualizer in Haskell"
   -- GLFW.setWindowRefreshCallback renderVisualization
-  -- GLFW.setWindowSizeCallback resizeScene
+  GLFW.setWindowSizeCallback resizeScene
   GLFW.setKeyCallback (keyPressed source)
   GLFW.setWindowCloseCallback (shutdown source)
 
@@ -125,41 +137,39 @@ initGLFW source = do
 
 -- clean this up and just pass the CA.elems spectrum since we do it anyways
 -- removes dependency on CA and IA
-renderBars :: Polars -> IO ()
-renderBars spectrum =
-  -- renderBar takes coords in SDL conventional coordinates
-  do mapM_ (uncurry $ renderBar) $ zip chosenElems (barSpan [10, 40, 70, 100, 130, 160, 190, 220])
-  where barSpan points = map (\point -> (point, (480 - 10))) points
-        spectrumElems = (drop 1 $ CA.elems spectrum)
+renderBars :: GPUResource -> Polars -> IO ()
+renderBars gpuResource spectrum =
+  do renderBars' chosenElems 0
+  where spectrumElems = (drop 1 $ CA.elems spectrum)
         len = (CA.size spectrum) - 1
+        -- choose even distribution from spectrum
         chosenElems = (every (len `div` 8) spectrumElems)
         maxSpectrum = maximum spectrumElems
+
+        -- draw a bar then translate to the right by 'sep' units
+        renderBars' :: [Double] -> Int -> IO ()
+        renderBars' [] count = do
+          -- GL.translate $ GL.Vector3 (fromIntegral count * 0.2) 0 (0 :: GL.GLfloat)
+          return ()
+        renderBars' (x:xs) count = do
+          renderBar (fromIntegral count) x
+          renderBars' xs (count + 1)
+
         -- take every nth element from a list: http://stackoverflow.com/a/2028218
         every n xs = case drop (n - 1) xs of
                        (y:ys) -> y : every n ys
                        [] -> []
+
         -- render volume bar in SDL
-        renderBar :: Double -> (Int, Int) -> IO ()
-        renderBar level (sdl_x, sdl_y) = do
-          -- the SDL.Rect box accepts is x1 y1 x2 y2 where 1's are top right, 2's are bottom left
-          -- do void $ SDL.P.box surface (SDL.Rect x y w h) (SDL.Pixel 0xFFFFFFFF) -- (color 255 255 255 255)
-
-          GL.color $ GL.Color3 1 1 (1 :: GL.GLfloat)
-
-          GL.renderPrimitive GL.Quads $ do
-            GL.vertex $ GL.Vertex3 (-1)  1 (0 :: GL.GLfloat) -- TL
-            GL.vertex $ GL.Vertex3  1    1 (0 :: GL.GLfloat) -- TR
-            GL.vertex $ GL.Vertex3  1  (-1)(0 :: GL.GLfloat) -- BR
-            GL.vertex $ GL.Vertex3 (-1)(-1)(0 :: GL.GLfloat) -- BL
-
-          GL.flush
-
-          where x = sdl_x + 20
-                y = sdl_y
-                w = sdl_x
-                h = y - (round scaled)
+        renderBar :: Double -> Double -> IO ()
+        renderBar barNumber level = do
+          drawQuad gpuResource (realToFrac barNumber) (realToFrac normalized)
+          where x = 0 -- sdl_x + 20
+                y = 0 -- sdl_y
+                w = 0 -- sdl_x
+                h = y - (round normalized)
                 normalized = level / maxSpectrum -- (fromIntegral (maxBound :: Int16))
-                scaled = normalized * 300
+                -- scaled = normalized * 300
 
 renderVisualization :: IORef GPUResource -> Polars -> IO ()
 renderVisualization gpuResource' polars = do
@@ -168,12 +178,12 @@ renderVisualization gpuResource' polars = do
   -- GL.loadIdentity
 
   -- setup camera position
-  -- GL.translate $ GL.Vector3 (-1.5) 0 (-6.0 :: GL.GLfloat) --Move left 1.5 Units and into the screen 6.0
+  GL.translate $ GL.Vector3 0 0 (-6.0 :: GL.GLfloat) --Move left 1.5 Units and into the screen 6.0
 
   -- render the bars
-  -- renderBars polars
+  renderBars gpuResource polars
 
-  drawQuad gpuResource
+  -- drawQuad gpuResource
 
   -- swap buffers
   GLFW.swapBuffers
@@ -184,7 +194,7 @@ resizeScene width height = do
   GL.viewport $= (GL.Position 0 0, (GL.Size (fromIntegral width) (fromIntegral height)))
   GL.matrixMode $= Projection
   GL.loadIdentity
-  GLU.perspective 45 (fromIntegral width / fromIntegral height) 0.1 100
+  -- GLU.perspective 45 (fromIntegral width / fromIntegral height) 0.1 100
   GL.matrixMode $= Modelview 0
   GL.loadIdentity
   GL.flush
