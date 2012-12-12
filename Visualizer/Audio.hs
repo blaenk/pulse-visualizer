@@ -45,13 +45,10 @@ bufferSize = 4096
 connectPulse = Pulse.simpleNew Nothing "Visualizer" Pulse.Record defaultMonitor "A PulseAudio visualizer written in Haskell" (Pulse.SampleSpec (Pulse.S16 Pulse.LittleEndian) 44100 1) Nothing Nothing
 disconnectPulse = Pulse.simpleFree
 
-readSamples :: Pulse.Simple -> [(Polars -> IO ())] -> IO ()
-readSamples source actions =
+readSamples :: Pulse.Simple -> IO Polars
+readSamples source =
   do buffer <- Pulse.simpleRead source bufferSize :: IO Buffer
-     let frequencies = polarMagnitudes $ normalizeSpectrum $ frequencySpectrum buffer
-
-     -- pass the spectrum
-     forM_ actions $ \action -> action frequencies
+     return $ polarMagnitudes $ normalizeSpectrum $ frequencySpectrum buffer
 
 bufferToRealData :: Buffer -> RealData
 bufferToRealData buffer =
