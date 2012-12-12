@@ -92,6 +92,18 @@ hammingWindow buffer =
     hamming n = (0.54 - 0.46 * (cos ((2 * pi * (fromIntegral n)) / ((fromIntegral len) - 1))))
     len = length buffer
 
+-- convolution algorithm based on convolution machine
+conv :: (Num a) => [a] -> [a] -> [a]
+conv xs hs =
+  let pad = take ((length hs) - 1) (repeat 0)
+      ts = pad ++ xs
+  in roll ts (reverse hs)
+  where -- roll the convolution machine
+        roll :: (Num a) => [a] -> [a] -> [a]
+        roll [] _ = []
+        roll ts hs = let sample = sum . map (uncurry (*)) $ zip ts hs
+                     in sample : roll (tail ts) hs
+
 -- general purpose sound generating function
 sound :: Double -> Int -> Double -> Sample -> Buffer
 sound freq samples len volume = take (round $ len * (fromIntegral samples)) $  -- take out desired number of samples
