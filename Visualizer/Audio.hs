@@ -10,6 +10,15 @@ module Visualizer.Audio (
   readSamples
 ) where
 
+{-
+  To find pulseaudio source monitors:
+    pacmd list-sources | awk '/name:.+monitor/'
+  To find ALSA recording devices:
+    arecord -l
+  For find ALSA recording device aliases:
+    arecord -L
+-} 
+
 -- sound
 import qualified Sound.Pulse.Simple as Pulse
 import qualified Math.FFT as FFTW
@@ -20,15 +29,6 @@ import Data.Int (Int16) -- S16 in SampleSpec
 
 -- misc
 import Control.Monad (forM_)
-
-{-
-  To find pulseaudio source monitors:
-    pacmd list-sources | awk '/name:.+monitor/'
-  To find ALSA recording devices:
-    arecord -l
-  For find ALSA recording device aliases:
-    arecord -L
--} 
 
 type Sample = Int16
 type Buffer = [Int16]
@@ -42,7 +42,9 @@ defaultMonitor = Just "alsa_output.pci-0000_00_1b.0.analog-stereo.monitor"
 bufferSize :: Int
 bufferSize = 4096
 
-connectPulse = Pulse.simpleNew Nothing "Visualizer" Pulse.Record defaultMonitor "A PulseAudio visualizer written in Haskell" (Pulse.SampleSpec (Pulse.S16 Pulse.LittleEndian) 44100 1) Nothing Nothing
+connectPulse = Pulse.simpleNew Nothing "Visualizer" Pulse.Record
+                 defaultMonitor "A PulseAudio visualizer written in Haskell"
+                 (Pulse.SampleSpec (Pulse.S16 Pulse.LittleEndian) 44100 1) Nothing Nothing
 disconnectPulse = Pulse.simpleFree
 
 readSamples :: Pulse.Simple -> IO Polars

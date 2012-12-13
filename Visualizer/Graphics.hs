@@ -19,11 +19,7 @@ import qualified Sound.Pulse.Simple as Pulse
 
 -- misc
 import qualified Data.Array.CArray as CA
-import qualified Data.Array.IArray as IA
-import Data.Bits (shiftL, (.|.))
-import Control.Monad (void, forever, forM_, unless)
 import Control.Applicative
-import Data.Int (Int16) -- S16 in SampleSpec
 import System.Exit (exitWith, ExitCode(ExitSuccess))
 import Foreign.Storable (sizeOf)
 import System.FilePath ((</>))
@@ -117,11 +113,11 @@ initGLFW source = do
   GLFW.setKeyCallback (keyPressed source)
   GLFW.setWindowCloseCallback (shutdown source)
 
-  -- GL.shadeModel $= GL.Smooth
+  GL.shadeModel $= GL.Smooth
   GL.clearColor $= (GL.Color4 0.0 0.0 0.0 (1.0 :: GL.GLfloat))
   GL.clearDepth $= 1
-  -- GL.depthFunc $= Just GL.Lequal
-  -- GL.hint PerspectiveCorrection $= Nicest
+  GL.depthFunc $= Just GL.Lequal
+  GL.hint PerspectiveCorrection $= Nicest
 
   makeGPUResource >>= newIORef
 
@@ -132,15 +128,15 @@ renderBars gpuResource spectrum =
   do renderBars' chosenElems 0
   where spectrumElems = (drop 1 $ CA.elems spectrum)
         len = (CA.size spectrum) - 1
+
         -- choose even distribution from spectrum
         chosenElems = (every (len `div` 8) spectrumElems)
+        -- to normalize the spectrum data (i.e. turn it into a scaling value [0,1])
         maxSpectrum = maximum spectrumElems
 
         -- draw a bar then translate to the right by 'sep' units
         renderBars' :: [Double] -> Int -> IO ()
-        renderBars' [] count = do
-          -- GL.translate $ GL.Vector3 (fromIntegral count * 0.2) 0 (0 :: GL.GLfloat)
-          return ()
+        renderBars' [] count = return ()
         renderBars' (x:xs) count = do
           renderBar (fromIntegral count) x
           renderBars' xs (count + 1)
@@ -179,12 +175,12 @@ renderVisualization gpuResource' polars = do
 resizeScene :: GLFW.WindowSizeCallback
 resizeScene w 0 = resizeScene w 1
 resizeScene width height = do
-  -- GL.viewport $= (GL.Position 0 0, (GL.Size (fromIntegral width) (fromIntegral height)))
-  -- GL.matrixMode $= Projection
-  -- GL.loadIdentity
-  -- GLU.perspective 45 (fromIntegral width / fromIntegral height) 0.1 100
-  -- GL.matrixMode $= Modelview 0
-  -- GL.loadIdentity
+  GL.viewport $= (GL.Position 0 0, (GL.Size (fromIntegral width) (fromIntegral height)))
+  GL.matrixMode $= Projection
+  GL.loadIdentity
+  GLU.perspective 45 (fromIntegral width / fromIntegral height) 0.1 100
+  GL.matrixMode $= Modelview 0
+  GL.loadIdentity
   GL.flush
 
 shutdown :: Pulse.Simple -> GLFW.WindowCloseCallback
